@@ -6,6 +6,7 @@ import uuid
 if TYPE_CHECKING:
     from .job import Job
 
+
 class FileReference(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     job_id: uuid.UUID = Field(foreign_key="job.id")
