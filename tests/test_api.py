@@ -3,7 +3,15 @@ from httpx import AsyncClient, ASGITransport
 from src.api.main import app
 from unittest.mock import patch, MagicMock
 from src.models import Job, JobStatus, FileReference
+from src.database import get_session
 import uuid
+
+@pytest.fixture
+def mock_session():
+    mock = MagicMock()
+    app.dependency_overrides[get_session] = lambda: mock
+    yield mock
+    app.dependency_overrides.clear()
 
 @pytest.fixture
 def test_client():
@@ -16,23 +24,14 @@ async def test_health(test_client):
     assert response.json() == {"status": "ok"}
 
 @pytest.mark.asyncio
-@patch("src.api.routers.jobs.get_session")
 @patch("src.api.routers.jobs.broker.publish")
-async def test_file_upload_and_job_creation(mock_publish, mock_session_dep, test_client, tmp_path):
-    mock_session = MagicMock()
-    mock_session_dep.return_value = mock_session
-    
+async def test_file_upload_and_job_creation(mock_publish, test_client, mock_session, tmp_path):
     pipeline = {"pipeline": [{"step": "validate"}]}
-    files = {"file": ("test.csv", b"dummy content", "text/csv")}
-    data = {"pipeline": json.dumps(pipeline)}
-    
     import json
+    data = {"pipeline": json.dumps(pipeline)}
+    files = {"file": ("test.csv", b"dummy content", "text/csv")}
     
-    with patch("os.makedirs"):
-        with patch("builtins.open"):
-            with patch("shutil.copyfileobj"):
-                with patch("os.path.getsize", return_value=1024):
-                    response = await test_client.post("/jobs/upload", data=data, files=files)
+    response = await test_client.post("/jobs/upload", data=data, files=files)
     
     assert response.status_code == 200
     assert "job_id" in response.json()
@@ -41,33 +40,33 @@ async def test_file_upload_and_job_creation(mock_publish, mock_session_dep, test
     assert mock_publish.called
 
 @pytest.mark.asyncio
-@patch("src.api.routers.jobs.get_session")
-async def test_job_status_tracking(mock_session_dep, test_client):
-    mock_session = MagicMock()
-    mock_session_dep.return_value = mock_session
-    
-    job_id = str(uuid.uuid4())
+async def test_job_status_tracking(test_client, mock_session):
+    job_id = uuid.uuid4()
     mock_job = Job(id=job_id, status=JobStatus.COMPLETED)
     mock_session.get.return_value = mock_job
     
-    response = await test_client.get(f"/jobs/{job_id}")
+    response = await test_client.get(f"/jobs/{str(job_id)}")
     assert response.status_code == 200
     assert response.json()["status"] == "COMPLETED"
 
 @pytest.mark.asyncio
-@patch("src.api.routers.jobs.get_session")
-async def test_file_retrieval(mock_session_dep, test_client):
-    mock_session = MagicMock()
-    mock_session_dep.return_value = mock_session
+async def test_file_retrieval(test_client, mock_session, tmp_path):
+    import os
+    file_id = uuid.uuid4()
+    temp_file = tmp_path / "test.csv"
+    temp_file.write_text("dummy content")
     
-    file_id = str(uuid.uuid4())
-    mock_file = FileReference(id=file_id, storage_path="dummy_path.csv", original_filename="test.csv", size_in_mb=1.0, content_type="text/csv", job_id=uuid.uuid4())
+    mock_file = FileReference(
+        id=file_id, 
+        storage_path=str(temp_file), 
+        original_filename="test.csv", 
+        size_in_mb=1.0, 
+        content_type="text/csv", 
+        job_id=uuid.uuid4()
+    )
     mock_session.get.return_value = mock_file
     
-    with patch("os.path.exists", return_value=True):
-        with patch("fastapi.responses.FileResponse") as mock_file_response:
-            mock_file_response.return_value = {"status": "file returned"}
-            response = await test_client.get(f"/jobs/files/{file_id}")
+    response = await test_client.get(f"/jobs/files/{str(file_id)}")
             
     assert response.status_code == 200
 

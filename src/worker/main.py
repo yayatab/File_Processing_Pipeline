@@ -37,7 +37,15 @@ async def process_job(msg: dict) -> None:
                 match step.step_type:
                     case "notify":
                         await broker.publish({"job_id": str(job.id), "params": json.loads(step.params)}, queue="webhooks")
-                    case "validate" | "transform" | "convert" | "compress":
+                    case "convert":
+                        if not job.files:
+                            raise ValueError("No input file found for job")
+                        input_file = job.files[0]
+                        out_path = f"{input_file.storage_path}.json"
+                        
+                        from src.worker.steps import convert_csv_to_json
+                        convert_csv_to_json(input_file.storage_path, out_path)
+                    case "validate" | "transform" | "compress":
                         pass # Mock execution for these steps to allow pipeline completion
                     case _:
                         pass
