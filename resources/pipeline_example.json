@@ -1,0 +1,37 @@
+{
+  "pipeline": [
+    {
+      "step": "validate",
+      "params": {
+        "expected_type": "csv"
+      }
+    },
+    {
+      "step": "transform",
+      "params": {
+        "select_columns": [
+          "name",
+          "email"
+        ]
+      }
+    },
+    {
+      "step": "convert",
+      "params": {
+        "output_format": "json"
+      }
+    },
+    {
+      "step": "compress",
+      "params": {
+        "algorithm": "gzip"
+      }
+    },
+    {
+      "step": "notify",
+      "params": {
+        "webhook_url": "https://example.com"
+      }
+    }
+  ]
+}
