@@ -38,7 +38,7 @@ async def upload_file(
         job_id=job.id,
         storage_path=file_path,
         original_filename=file.filename,
-        size=os.path.getsize(file_path),
+        size_in_mb=os.path.getsize(file_path) / (1024 * 1024),
         content_type=file.content_type
     )
     session.add(file_ref)
