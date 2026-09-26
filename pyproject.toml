@@ -1,0 +1,19 @@
+[project]
+name = "file-processing-pipeline"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "apscheduler>=3.11.3",
+    "cryptography>=50.0.1",
+    "fastapi>=0.141.1",
+    "faststream[rabbit]>=0.7.7",
+    "httpx>=0.28.1",
+    "pandas>=3.0.6",
+    "pymysql>=1.2.3",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "python-multipart>=0.0.32",
+    "sqlmodel>=0.0.47",
+    "uvicorn>=0.54.0",
+]

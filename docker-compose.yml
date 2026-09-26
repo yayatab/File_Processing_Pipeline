@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pipeline
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  api:
+    build: .
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+  worker:
+    build: .
+    command: faststream run src.worker.main:app
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+  notifier:
+    build: .
+    command: faststream run src.notifier.main:app
+    volumes:
+      - .:/app
+    depends_on:
+      - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+
+volumes:
+  mysql_data:
+  rabbitmq_data:
+  shared_storage:
