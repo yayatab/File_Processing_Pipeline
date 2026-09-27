@@ -26,6 +26,8 @@ class Job(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    parent_job_id: Optional[str] = None
+    pending_dependencies: int = Field(default=0)
 
     steps: List["JobStep"] = Relationship(back_populates="job")
     files: List["FileReference"] = Relationship(back_populates="job")

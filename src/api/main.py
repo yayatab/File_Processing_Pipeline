@@ -13,5 +13,5 @@ app = FastAPI(lifespan=lifespan, title="File Processing Pipeline")
 app.include_router(jobs.router, prefix="/jobs")
 
 @app.get("/health")
-def health():
+def health() -> dict[str, str]:
     return {"status": "ok"}

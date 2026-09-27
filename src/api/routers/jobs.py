@@ -6,6 +6,7 @@ from sqlmodel import Session
 from src.database import get_session
 from src.models import Job, JobStep, FileReference
 from faststream.rabbit import RabbitBroker
+from fastapi.responses import FileResponse
 
 router = APIRouter()
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
@@ -55,8 +56,7 @@ async def upload_file(
     session.commit()
 
     await broker.connect()
-    await broker.publish({"job_id": job.id}, queue="pipeline_jobs")
-    await broker.close()
+    await broker.publish({"job_id": str(job.id)}, queue="pipeline_jobs")
 
     return {"job_id": job.id}
 
@@ -70,16 +70,14 @@ def get_job(job_id: str, session: Session = Depends(get_session)) -> dict:
     return job.model_dump(mode="json")
 
 
-from fastapi.responses import FileResponse
-
 @router.get("/files/{file_id}")
 def download_file(file_id: str, session: Session = Depends(get_session)) -> FileResponse:
     file_ref = session.get(FileReference, file_id)
     if not file_ref or not os.path.exists(file_ref.storage_path):
         raise HTTPException(status_code=404, detail="File not found")
-        
+
     return FileResponse(
-        path=file_ref.storage_path, 
-        filename=file_ref.original_filename, 
+        path=file_ref.storage_path,
+        filename=file_ref.original_filename,
         media_type=file_ref.content_type
     )

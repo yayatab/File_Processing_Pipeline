@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS job (
     error_message VARCHAR(255),
     created_at DATETIME,
     started_at DATETIME,
-    completed_at DATETIME
+    completed_at DATETIME,
+    parent_job_id CHAR(32),
+    pending_dependencies INT DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS jobstep (
