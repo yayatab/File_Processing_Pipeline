@@ -7,6 +7,10 @@ from sqlmodel import Session
 from src.database import engine
 from src.models import Job, JobStep, JobStatus
 
+import logfire
+
+logfire.configure(send_to_logfire='if-token-present')
+
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 broker = RabbitBroker(RABBITMQ_URL)
 app = FastStream(broker)
@@ -137,11 +141,19 @@ async def process_job(msg: dict) -> None:
         job.status = JobStatus.RUNNING
         session.commit()
 
+        from datetime import datetime, timezone
+
         for step in job.steps:
             if step.status == JobStatus.COMPLETED:
                 continue
 
+            if job.status == JobStatus.FAILED:
+                step.status = JobStatus.SKIPPED
+                session.commit()
+                continue
+
             step.status = JobStatus.RUNNING
+            step.started_at = datetime.now(timezone.utc)
             job.current_step_index = step.step_index
             session.commit()
 
@@ -152,33 +164,37 @@ async def process_job(msg: dict) -> None:
                                              queue="webhooks")
                     case "convert":
                         await apply_convertion(job, step)
-
                     case "validate":
                         await apply_validate(job)
-
                     case "transform":
                         await apply_transform(job, step)
-
                     case "compress":
                         await apply_compression(job, step)
-
                     case "extract":
                         await apply_extraction(job, session, step)
                     case _:
                         pass
 
                 step.status = JobStatus.COMPLETED
+                step.completed_at = datetime.now(timezone.utc)
+                if step.started_at:
+                    step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
             except Exception as e:
                 step.status = JobStatus.FAILED
                 step.error_message = str(e)
+                step.completed_at = datetime.now(timezone.utc)
+                if step.started_at:
+                    step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
                 job.status = JobStatus.FAILED
                 job.error_message = f"Failed at step {step.step_type}: {e}"
                 session.commit()
-                return
+                continue
 
             session.commit()
 
-        job.status = JobStatus.COMPLETED
+        if job.status != JobStatus.FAILED:
+            job.status = JobStatus.COMPLETED
+            job.completed_at = datetime.now(timezone.utc)
         session.commit()
 
         if job.parent_job_id:

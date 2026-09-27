@@ -15,10 +15,12 @@
 **Input files:** [When deleted]
 **Intermediate files:** [When deleted]
 **Output files:** [When deleted]
+
 ## 4. Progress Tracking
 **Approach chosen:** [Your approach]
 **Granularity:** [How often updated]
 **Trade-offs:** [Overhead vs visibility]
 
 ## 5. One Thing I Would Do Differently With More Time
-[Be honest - what did you skip or simplify?]
+Expand on test plan and scenarios and would add CRUD
+in real worl scenario, i would also add datadog/Elasticsearch and a helm chart with prod/staging/dev values

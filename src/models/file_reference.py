@@ -15,5 +15,6 @@ class FileReference(SQLModel, table=True):
     size_in_mb: float
     content_type: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime | None = Field(default=None)
 
     job: "Job" = Relationship(back_populates="files")

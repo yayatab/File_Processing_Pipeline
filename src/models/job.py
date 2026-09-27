@@ -43,5 +43,6 @@ class JobStep(SQLModel, table=True):
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
 
     job: Job = Relationship(back_populates="steps")

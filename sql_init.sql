@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS jobstep (
     error_message VARCHAR(255),
     started_at DATETIME,
     completed_at DATETIME,
+    duration_seconds FLOAT,
     FOREIGN KEY (job_id) REFERENCES job(id)
 );
 
@@ -35,5 +36,6 @@ CREATE TABLE IF NOT EXISTS filereference (
     size_in_mb FLOAT,
     content_type VARCHAR(255),
     created_at DATETIME,
+    expires_at DATETIME,
     FOREIGN KEY (job_id) REFERENCES job(id)
 );

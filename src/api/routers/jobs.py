@@ -35,12 +35,14 @@ async def upload_file(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
+    from datetime import datetime, timezone, timedelta
     file_ref = FileReference(
         job_id=job.id,
         storage_path=file_path,
         original_filename=file.filename or "unknown",
         size_in_mb=os.path.getsize(file_path) / (1024 * 1024),
-        content_type=file.content_type or "application/octet-stream"
+        content_type=file.content_type or "application/octet-stream",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24)
     )
     session.add(file_ref)
 
@@ -67,7 +69,12 @@ def get_job(job_id: str, session: Session = Depends(get_session)) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return job.model_dump(mode="json")
+    data = job.model_dump(mode="json")
+    data["steps"] = [s.model_dump(mode="json") for s in job.steps]
+    if job.status == "COMPLETED" and job.files:
+        data["result_file_id"] = str(job.files[-1].id)
+        
+    return data
 
 
 @router.get("/files/{file_id}")
