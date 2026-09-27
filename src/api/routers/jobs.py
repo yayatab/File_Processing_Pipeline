@@ -57,8 +57,16 @@ async def upload_file(
 
     session.commit()
 
+    if job.steps:
+        first_step = min(job.steps, key=lambda s: s.step_index)
+        queue_name = f"step_{first_step.step_type}"
+        step_id = str(first_step.id)
+    else:
+        queue_name = "pipeline_jobs"
+        step_id = ""
+
     await broker.connect()
-    await broker.publish({"job_id": str(job.id)}, queue="pipeline_jobs")
+    await broker.publish({"job_id": str(job.id), "step_id": step_id}, queue=queue_name)
 
     return {"job_id": job.id}
 
@@ -69,12 +77,13 @@ def get_job(job_id: str, session: Session = Depends(get_session)) -> dict:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    data = job.model_dump(mode="json")
-    data["steps"] = [s.model_dump(mode="json") for s in job.steps]
-    if job.status == "COMPLETED" and job.files:
-        data["result_file_id"] = str(job.files[-1].id)
-        
-    return data
+    return job.model_dump(mode="json")
+
+@router.get("/")
+def get_all_jobs(session: Session = Depends(get_session)) -> list[dict]:
+    from sqlmodel import select
+    jobs = session.exec(select(Job)).all()
+    return [job.model_dump(mode="json") for job in jobs]
 
 
 @router.get("/files/{file_id}")

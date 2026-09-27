@@ -44,5 +44,6 @@ class JobStep(SQLModel, table=True):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
+    retry_count: int = Field(default=0)
 
     job: Job = Relationship(back_populates="steps")

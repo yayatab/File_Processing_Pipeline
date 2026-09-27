@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS jobstep (
     started_at DATETIME,
     completed_at DATETIME,
     duration_seconds FLOAT,
+    retry_count INT DEFAULT 0,
     FOREIGN KEY (job_id) REFERENCES job(id)
 );
 

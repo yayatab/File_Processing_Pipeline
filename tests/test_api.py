@@ -78,23 +78,30 @@ async def test_pipeline_execution_end_to_end(mock_session_cls):
     mock_session = MagicMock()
     mock_session_cls.return_value.__enter__.return_value = mock_session
     
-    from src.worker.main import process_job
+    from src.worker.main import handle_validate
     from src.models import JobStep
     
     job_id = uuid.uuid4()
+    step_id = uuid.uuid4()
     mock_job = Job(id=job_id, status=JobStatus.PENDING, pipeline_definition="{}")
-    mock_job.steps = [JobStep(job_id=job_id, step_index=0, step_type="validate", params="{}")]
+    mock_step = JobStep(id=step_id, job_id=job_id, step_index=0, step_type="validate", params="{}")
+    mock_job.steps = [mock_step]
     
     mock_file = FileReference(job_id=job_id, storage_path="dummy.csv", original_filename="dummy.csv", size_in_mb=1.0, content_type="text/csv")
     mock_job.files = [mock_file]
     
-    mock_session.get.return_value = mock_job
+    def side_effect(model, ident):
+        if model == Job: return mock_job
+        if model == JobStep: return mock_step
+        return None
+        
+    mock_session.get.side_effect = side_effect
     
     with patch("src.worker.steps.validate_file"):
-        await process_job({"job_id": str(job_id)})
+        await handle_validate({"job_id": str(job_id), "step_id": str(step_id)})
     
     assert mock_job.status == JobStatus.COMPLETED
-    assert mock_job.steps[0].status == JobStatus.COMPLETED
+    assert mock_step.status == JobStatus.COMPLETED
 
 @pytest.mark.asyncio
 @patch("src.worker.main.Session")
@@ -102,20 +109,25 @@ async def test_step_failure_handling(mock_session_cls):
     mock_session = MagicMock()
     mock_session_cls.return_value.__enter__.return_value = mock_session
     
-    from src.worker.main import process_job
+    from src.worker.main import handle_notify
     from src.models import JobStep
     
     job_id = uuid.uuid4()
+    step_id = uuid.uuid4()
     mock_job = Job(id=job_id, status=JobStatus.PENDING, pipeline_definition="{}")
-    # Unknown step type will pass, but let's force an exception by mocking
-    mock_step = JobStep(job_id=job_id, step_index=0, step_type="error_step", params="{}")
+    mock_step = JobStep(id=step_id, job_id=job_id, step_index=0, step_type="notify", params="{}")
+    mock_step.retry_count = 3 # Force fail instead of requeue
     mock_job.steps = [mock_step]
     
-    mock_session.get.return_value = mock_job
+    def side_effect(model, ident):
+        if model == Job: return mock_job
+        if model == JobStep: return mock_step
+        return None
+        
+    mock_session.get.side_effect = side_effect
     
     with patch("src.worker.main.json.loads", side_effect=Exception("forced error")):
-        mock_step.step_type = "notify" # Trigger the branch that calls json.loads
-        await process_job({"job_id": str(job_id)})
+        await handle_notify({"job_id": str(job_id), "step_id": str(step_id)})
         
     assert mock_job.status == JobStatus.FAILED
     assert mock_step.status == JobStatus.FAILED
