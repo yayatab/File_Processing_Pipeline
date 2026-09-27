@@ -97,3 +97,45 @@ def download_file(file_id: str, session: Session = Depends(get_session)) -> File
         filename=file_ref.original_filename,
         media_type=file_ref.content_type
     )
+
+async def _resume_job_recursive(job_id: str, session: Session):
+    from src.models import JobStatus
+    from sqlmodel import select
+    
+    job: Job | None = session.get(Job, job_id)
+    if not job:
+        return
+        
+    children = session.exec(select(Job).where(Job.parent_job_id == str(job.id))).all() # type: ignore
+    for child in children:
+        await _resume_job_recursive(str(child.id), session)
+        
+    if job.status == JobStatus.FAILED:
+        job.status = JobStatus.PENDING
+        job.error_message = None
+        
+        target_step = None
+        for step in sorted(job.steps, key=lambda s: s.step_index):
+            if step.status == JobStatus.FAILED:
+                step.status = JobStatus.PENDING
+                step.retry_count = 0
+                step.error_message = None
+                target_step = step
+            elif step.status == JobStatus.SKIPPED:
+                step.status = JobStatus.PENDING
+                
+        session.commit()
+        
+        if target_step:
+            await broker.publish({"job_id": str(job.id), "step_id": str(target_step.id)}, queue=f"step_{target_step.step_type}")
+
+@router.post("/{job_id}/resume")
+async def resume_job(job_id: str, session: Session = Depends(get_session)) -> dict:
+    job: Job | None = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    await broker.connect()
+    await _resume_job_recursive(job_id, session)
+    
+    return {"message": f"Resume signal processed for job {job_id} and its subjobs"}

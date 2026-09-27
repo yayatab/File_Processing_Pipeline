@@ -2,7 +2,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from src.api.main import app
 from unittest.mock import patch, MagicMock
-from src.models import Job, JobStatus, FileReference
+from src.models import Job, JobStatus, FileReference, JobStep
 from src.database import get_session
 import uuid
 
@@ -132,3 +132,37 @@ async def test_step_failure_handling(mock_session_cls):
     assert mock_job.status == JobStatus.FAILED
     assert mock_step.status == JobStatus.FAILED
     assert mock_step.error_message and "forced error" in mock_step.error_message
+
+@pytest.mark.asyncio
+@patch("src.api.routers.jobs.broker.publish")
+@patch("src.api.routers.jobs.broker.connect")
+async def test_job_resume(mock_connect, mock_publish, test_client, mock_session):
+    job_id = uuid.uuid4()
+    step_id = uuid.uuid4()
+    mock_job = Job(id=job_id, status=JobStatus.FAILED, pipeline_definition="{}")
+    mock_step_1 = JobStep(id=uuid.uuid4(), job_id=job_id, step_index=0, step_type="validate", status=JobStatus.COMPLETED, params="{}")
+    mock_step_2 = JobStep(id=step_id, job_id=job_id, step_index=1, step_type="transform", status=JobStatus.FAILED, retry_count=3, params="{}")
+    mock_step_3 = JobStep(id=uuid.uuid4(), job_id=job_id, step_index=2, step_type="notify", status=JobStatus.SKIPPED, params="{}")
+    mock_job.steps = [mock_step_1, mock_step_2, mock_step_3]
+    
+    def side_effect(model, ident=None):
+        if model == Job and ident == str(job_id): return mock_job
+        return None
+        
+    mock_session.get.side_effect = side_effect
+    
+    # Mock the recursive child lookup
+    mock_session.exec.return_value.all.return_value = []
+    
+    response = await test_client.post(f"/jobs/{str(job_id)}/resume")
+    
+    assert response.status_code == 200
+    assert mock_job.status == JobStatus.PENDING
+    assert mock_step_1.status == JobStatus.COMPLETED  # Untouched
+    assert mock_step_2.status == JobStatus.PENDING    # Reset
+    assert mock_step_2.retry_count == 0               # Reset
+    assert mock_step_3.status == JobStatus.PENDING    # Reset from SKIPPED
+    
+    assert mock_publish.called
+    args, kwargs = mock_publish.call_args
+    assert kwargs["queue"] == "step_transform"
