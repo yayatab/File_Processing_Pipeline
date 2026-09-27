@@ -41,10 +41,16 @@ async def process_job(msg: dict) -> None:
                         if not job.files:
                             raise ValueError("No input file found for job")
                         input_file = job.files[0]
-                        out_path = f"{input_file.storage_path}.json"
                         
-                        from src.worker.steps import convert_csv_to_json
-                        convert_csv_to_json(input_file.storage_path, out_path)
+                        params = json.loads(step.params)
+                        to_ext = params.get("output_format", "json").lower()
+                        from_ext = input_file.original_filename.split('.')[-1].lower()
+                        
+                        out_path = f"{input_file.storage_path}.{to_ext}"
+                        
+                        from src.worker.steps import convert_file
+                        convert_file(input_file.storage_path, out_path, from_ext, to_ext)
+                        
                     case "validate" | "transform" | "compress":
                         pass # Mock execution for these steps to allow pipeline completion
                     case _:

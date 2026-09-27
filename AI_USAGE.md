@@ -7,6 +7,7 @@ b. plan mode with several iterations. as carpenters say - measure 7 times, cut o
 ## What I Had to Fix
 change List to list
 include ruff
-
+becuase/thanks to YAGNI (you ain't gonna need it later), th AI struggled with implementing things ahead.
 ## What AI Struggled With
-prefered to do stuff itself instead of using builtin functions. (i.e. create a dict instead of using model_dump)
+prefered to do stuff itself instead of using builtin functions. (i.e. create a dict instead of using model_dump)</br>
+I had to implement some converseions myself becuase of YAGNI
