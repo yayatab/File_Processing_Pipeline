@@ -43,7 +43,7 @@ async def test_file_upload_and_job_creation(mock_connect, mock_publish, test_cli
 @pytest.mark.asyncio
 async def test_job_status_tracking(test_client, mock_session):
     job_id = uuid.uuid4()
-    mock_job = Job(id=job_id, status=JobStatus.COMPLETED)
+    mock_job = Job(id=job_id, status=JobStatus.COMPLETED, pipeline_definition="{}")
     mock_session.get.return_value = mock_job
     
     response = await test_client.get(f"/jobs/{str(job_id)}")
@@ -82,7 +82,7 @@ async def test_pipeline_execution_end_to_end(mock_session_cls):
     from src.models import JobStep
     
     job_id = uuid.uuid4()
-    mock_job = Job(id=job_id, status=JobStatus.PENDING)
+    mock_job = Job(id=job_id, status=JobStatus.PENDING, pipeline_definition="{}")
     mock_job.steps = [JobStep(job_id=job_id, step_index=0, step_type="validate", params="{}")]
     
     mock_file = FileReference(job_id=job_id, storage_path="dummy.csv", original_filename="dummy.csv", size_in_mb=1.0, content_type="text/csv")
@@ -106,7 +106,7 @@ async def test_step_failure_handling(mock_session_cls):
     from src.models import JobStep
     
     job_id = uuid.uuid4()
-    mock_job = Job(id=job_id, status=JobStatus.PENDING)
+    mock_job = Job(id=job_id, status=JobStatus.PENDING, pipeline_definition="{}")
     # Unknown step type will pass, but let's force an exception by mocking
     mock_step = JobStep(job_id=job_id, step_index=0, step_type="error_step", params="{}")
     mock_job.steps = [mock_step]
@@ -119,4 +119,4 @@ async def test_step_failure_handling(mock_session_cls):
         
     assert mock_job.status == JobStatus.FAILED
     assert mock_step.status == JobStatus.FAILED
-    assert "forced error" in mock_step.error_message
+    assert mock_step.error_message and "forced error" in mock_step.error_message

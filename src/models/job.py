@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 from sqlalchemy import Column, String
 import uuid
@@ -29,8 +29,8 @@ class Job(SQLModel, table=True):
     parent_job_id: Optional[str] = None
     pending_dependencies: int = Field(default=0)
 
-    steps: List["JobStep"] = Relationship(back_populates="job")
-    files: List["FileReference"] = Relationship(back_populates="job")
+    steps: list["JobStep"] = Relationship(back_populates="job")
+    files: list["FileReference"] = Relationship(back_populates="job")
 
 
 class JobStep(SQLModel, table=True):

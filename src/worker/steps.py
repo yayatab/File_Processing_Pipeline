@@ -40,6 +40,9 @@ def read_json(f: TextIO) -> Iterator[Dict[str, Any]]:
                     yield json.loads(buffer)
                     buffer = ""
                     in_object = False
+                    
+    if in_object or brace_count != 0:
+        raise ValueError("Malformed JSON: Unclosed object")
 
 
 def read_yaml(f: TextIO) -> Iterator[Dict[str, Any]]:

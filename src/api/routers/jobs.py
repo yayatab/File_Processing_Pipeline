@@ -38,9 +38,9 @@ async def upload_file(
     file_ref = FileReference(
         job_id=job.id,
         storage_path=file_path,
-        original_filename=file.filename,
+        original_filename=file.filename or "unknown",
         size_in_mb=os.path.getsize(file_path) / (1024 * 1024),
-        content_type=file.content_type
+        content_type=file.content_type or "application/octet-stream"
     )
     session.add(file_ref)
 

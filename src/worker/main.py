@@ -159,7 +159,7 @@ async def process_job(msg: dict) -> None:
                 session.commit()
                 if parent.pending_dependencies == 0:
                     from sqlalchemy import select
-                    siblings = session.exec(select(Job).where(Job.parent_job_id == str(parent.id))).all()
+                    siblings = session.exec(select(Job).where(Job.parent_job_id == str(parent.id))).all() # type: ignore
                     for sib in siblings:
                         for sf in sib.files:
                             sf.job_id = parent.id
