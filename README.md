@@ -120,3 +120,9 @@ To shut down and remove the volumes (will delete database data and local files):
 ```bash
 docker compose down -v
 ```
+**4. Cancel a Job**
+
+If a job is pending or running, you can cancel it and halt all its subjobs and downstream tasks.
+```bash
+curl -X POST "http://localhost:8000/jobs/<job_id>/cancel" -H "accept: application/json"
+```

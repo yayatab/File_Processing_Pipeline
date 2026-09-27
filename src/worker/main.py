@@ -146,6 +146,11 @@ async def execute_step(msg: dict, step_executor_func) -> None:
             step.status = JobStatus.SKIPPED
             session.commit()
             return
+
+        if job.status == JobStatus.CANCELLED:
+            step.status = JobStatus.CANCELLED
+            session.commit()
+            return
             
         job.status = JobStatus.RUNNING
         step.status = JobStatus.RUNNING

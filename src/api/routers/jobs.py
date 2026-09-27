@@ -129,7 +129,7 @@ async def _resume_job_recursive(job_id: str, session: Session):
         if target_step:
             await broker.publish({"job_id": str(job.id), "step_id": str(target_step.id)}, queue=f"step_{target_step.step_type}")
 
-@router.post("/{job_id}/resume")
+@router.post("/{job_id}/resume", summary="Resume a failed job", description="Resumes a job from its point of failure, requeuing skipped or failed steps.")
 async def resume_job(job_id: str, session: Session = Depends(get_session)) -> dict:
     job: Job | None = session.get(Job, job_id)
     if not job:
@@ -139,3 +139,34 @@ async def resume_job(job_id: str, session: Session = Depends(get_session)) -> di
     await _resume_job_recursive(job_id, session)
     
     return {"message": f"Resume signal processed for job {job_id} and its subjobs"}
+
+async def _cancel_job_recursive(job_id: str, session: Session):
+    from src.models import JobStatus
+    from sqlmodel import select
+    
+    job: Job | None = session.get(Job, job_id)
+    if not job:
+        return
+        
+    children = session.exec(select(Job).where(Job.parent_job_id == str(job.id))).all() # type: ignore
+    for child in children:
+        await _cancel_job_recursive(str(child.id), session)
+        
+    if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+        job.status = JobStatus.CANCELLED
+        
+        for step in job.steps:
+            if step.status in (JobStatus.PENDING, JobStatus.RUNNING):
+                step.status = JobStatus.CANCELLED
+                
+        session.commit()
+
+@router.post("/{job_id}/cancel", summary="Cancel a job", description="Cancels a pending or running job, halting all subjobs and downstream tasks.")
+async def cancel_job(job_id: str, session: Session = Depends(get_session)) -> dict:
+    job: Job | None = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    await _cancel_job_recursive(job_id, session)
+    
+    return {"message": f"Cancel signal processed for job {job_id} and its subjobs"}
