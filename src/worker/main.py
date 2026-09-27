@@ -154,33 +154,47 @@ async def execute_step(msg: dict, step_executor_func) -> None:
         job.current_step_index = step.step_index
         session.commit()
         
-        try:
-            await step_executor_func(job, session, step)
-            step.status = JobStatus.COMPLETED
-            step.completed_at = datetime.now(timezone.utc)
-            step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-            session.commit()
-        except Exception as e:
-            if step.retry_count < 3:
-                step.retry_count += 1
-                step.status = JobStatus.PENDING
-                session.commit()
-                await broker.publish(msg, queue=f"step_{step.step_type}")
-                return
-            else:
-                step.status = JobStatus.FAILED
-                step.error_message = str(e)
+        with logfire.span("execute_step {step_type}", step_type=step.step_type, job_id=job_id, step_id=step_id, retry_count=step.retry_count) as span:
+            try:
+                await step_executor_func(job, session, step)
+                step.status = JobStatus.COMPLETED
                 step.completed_at = datetime.now(timezone.utc)
                 step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-                
-                job.status = JobStatus.FAILED
-                job.error_message = f"Failed at step {step.step_type}: {e}"
-                
-                for s in job.steps:
-                    if s.status == JobStatus.PENDING:
-                        s.status = JobStatus.SKIPPED
                 session.commit()
-                return
+                span.set_attribute("status", "COMPLETED")
+            except Exception as e:
+                span.record_exception(e)
+                params = {}
+                try:
+                    params = json.loads(step.params)
+                except Exception:
+                    pass
+                max_retries = int(params.get("max_retries", os.getenv("MAX_RETRIES", "3")))
+                
+                if step.retry_count < max_retries:
+                    step.retry_count += 1
+                    step.status = JobStatus.PENDING
+                    session.commit()
+                    logfire.warn("Step failed, requeuing", job_id=job_id, step_id=step_id, retry_count=step.retry_count, max_retries=max_retries, error=str(e))
+                    await broker.publish(msg, queue=f"step_{step.step_type}")
+                    span.set_attribute("status", "REQUEUED")
+                    return
+                else:
+                    step.status = JobStatus.FAILED
+                    step.error_message = str(e)
+                    step.completed_at = datetime.now(timezone.utc)
+                    step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
+                    
+                    job.status = JobStatus.FAILED
+                    job.error_message = f"Failed at step {step.step_type}: {e}"
+                    
+                    for s in job.steps:
+                        if s.status == JobStatus.PENDING:
+                            s.status = JobStatus.SKIPPED
+                    session.commit()
+                    logfire.error("Step failed permanently", job_id=job_id, step_id=step_id, error=str(e))
+                    span.set_attribute("status", "FAILED")
+                    return
 
         pending_steps = [s for s in job.steps if s.step_index > step.step_index and s.status == JobStatus.PENDING]
         if pending_steps:
