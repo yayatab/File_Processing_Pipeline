@@ -4,7 +4,6 @@ from faststream import FastStream
 from faststream.rabbit import RabbitBroker
 from sqlmodel import Session
 from datetime import datetime, timezone
-
 from src.database import engine
 from src.models import Job, JobStep, JobStatus
 
@@ -128,19 +127,15 @@ async def apply_convertion(job: Job, step: JobStep) -> None:
 
     from src.worker.steps import convert_file
     convert_file(input_file.storage_path, out_path, from_ext, to_ext)
-
+    
     from src.models import FileReference
-    input_file.session.add(FileReference(job_id=job.id, storage_path=out_path,
-                                         original_filename=f"{input_file.original_filename}.{to_ext}",
-                                         size_in_mb=os.path.getsize(out_path) / (1024 * 1024),
-                                         content_type="application/json"))
-
+    input_file.session.add(FileReference(job_id=job.id, storage_path=out_path, original_filename=f"{input_file.original_filename}.{to_ext}", size_in_mb=os.path.getsize(out_path)/(1024*1024), content_type="application/json"))
 
 async def execute_step(msg: dict, step_executor_func) -> None:
     job_id = msg.get("job_id")
     step_id = msg.get("step_id")
     if not job_id or not step_id: return
-
+    
     with Session(engine) as session:
         job = session.get(Job, job_id)
         step = session.get(JobStep, step_id)
@@ -151,14 +146,14 @@ async def execute_step(msg: dict, step_executor_func) -> None:
             step.status = JobStatus.SKIPPED
             session.commit()
             return
-
+            
         job.status = JobStatus.RUNNING
         step.status = JobStatus.RUNNING
         if not step.started_at:
             step.started_at = datetime.now(timezone.utc)
         job.current_step_index = step.step_index
         session.commit()
-
+        
         try:
             await step_executor_func(job, session, step)
             step.status = JobStatus.COMPLETED
@@ -177,10 +172,10 @@ async def execute_step(msg: dict, step_executor_func) -> None:
                 step.error_message = str(e)
                 step.completed_at = datetime.now(timezone.utc)
                 step.duration_seconds = (step.completed_at - step.started_at).total_seconds()
-
+                
                 job.status = JobStatus.FAILED
                 job.error_message = f"Failed at step {step.step_type}: {e}"
-
+                
                 for s in job.steps:
                     if s.status == JobStatus.PENDING:
                         s.status = JobStatus.SKIPPED
@@ -190,79 +185,70 @@ async def execute_step(msg: dict, step_executor_func) -> None:
         pending_steps = [s for s in job.steps if s.step_index > step.step_index and s.status == JobStatus.PENDING]
         if pending_steps:
             next_step = min(pending_steps, key=lambda s: s.step_index)
-            await broker.publish({"job_id": str(job.id), "step_id": str(next_step.id)},
-                                 queue=f"step_{next_step.step_type}")
+            await broker.publish({"job_id": str(job.id), "step_id": str(next_step.id)}, queue=f"step_{next_step.step_type}")
         else:
-            await handle_job_completion(job, session)
-
-
-async def handle_job_completion(job: Job, session: Session) -> None:
-    job.status = JobStatus.COMPLETED
-    job.completed_at = datetime.now(timezone.utc)
-    session.commit()
-
-    if job.parent_job_id:
-        parent = session.get(Job, job.parent_job_id)
-        if parent and parent.pending_dependencies > 0:
-            parent.pending_dependencies -= 1
+            job.status = JobStatus.COMPLETED
+            job.completed_at = datetime.now(timezone.utc)
             session.commit()
-            if parent.pending_dependencies == 0:
-                from sqlalchemy import select
-                siblings = session.exec(select(Job).where(Job.parent_job_id == str(parent.id))).all()  # type: ignore
-                for sib in siblings:
-                    for sf in sib.files:
-                        sf.job_id = parent.id
-                        session.add(sf)
-                session.commit()
-
-                if parent.steps:
-                    parent_next = min([s for s in parent.steps if s.status == JobStatus.PENDING],
-                                      key=lambda s: s.step_index, default=None)
-                    if parent_next:
-                        await broker.publish({"job_id": str(parent.id), "step_id": str(parent_next.id)},
-                                             queue=f"step_{parent_next.step_type}")
-
-
-@broker.subscriber("step_validate")
-async def handle_validate(msg: dict):
-    async def executor(j, s, st):
-        await apply_validate(j)
-
-    await execute_step(msg, executor)
+            
+            if job.parent_job_id:
+                parent = session.get(Job, job.parent_job_id)
+                if parent and parent.pending_dependencies > 0:
+                    parent.pending_dependencies -= 1
+                    session.commit()
+                    if parent.pending_dependencies == 0:
+                        from sqlalchemy import select
+                        siblings = session.exec(select(Job).where(Job.parent_job_id == str(parent.id))).all() # type: ignore
+                        for sib in siblings:
+                            for sf in sib.files:
+                                sf.job_id = parent.id
+                                session.add(sf)
+                        session.commit()
+                        
+                        if parent.steps:
+                            parent_next = min([s for s in parent.steps if s.status == JobStatus.PENDING], key=lambda s: s.step_index, default=None)
+                            if parent_next:
+                                await broker.publish({"job_id": str(parent.id), "step_id": str(parent_next.id)}, queue=f"step_{parent_next.step_type}")
 
 
-@broker.subscriber("step_transform")
-async def handle_transform(msg: dict):
-    async def executor(j, s, st):
-        await apply_transform(j, st)
+ACTIVE_STEP = os.getenv("ACTIVE_WORKER_STEP", "all")
 
-    await execute_step(msg, executor)
+if ACTIVE_STEP in ("all", "validate"):
+    @broker.subscriber("step_validate")
+    async def handle_validate(msg: dict):
+        async def executor(j, s, st):
+            await apply_validate(j)
+        await execute_step(msg, executor)
 
+if ACTIVE_STEP in ("all", "transform"):
+    @broker.subscriber("step_transform")
+    async def handle_transform(msg: dict):
+        async def executor(j, s, st):
+            await apply_transform(j, st)
+        await execute_step(msg, executor)
 
-@broker.subscriber("step_convert")
-async def handle_convert(msg: dict):
-    async def executor(j, s, st):
-        await apply_convertion(j, st)
+if ACTIVE_STEP in ("all", "convert"):
+    @broker.subscriber("step_convert")
+    async def handle_convert(msg: dict):
+        async def executor(j, s, st):
+            await apply_convertion(j, st)
+        await execute_step(msg, executor)
 
-    await execute_step(msg, executor)
+if ACTIVE_STEP in ("all", "compress"):
+    @broker.subscriber("step_compress")
+    async def handle_compress(msg: dict):
+        async def executor(j, s, st):
+            await apply_compression(j, st)
+        await execute_step(msg, executor)
 
+if ACTIVE_STEP in ("all", "extract"):
+    @broker.subscriber("step_extract")
+    async def handle_extract(msg: dict):
+        await execute_step(msg, apply_extraction)
 
-@broker.subscriber("step_compress")
-async def handle_compress(msg: dict):
-    async def executor(j, s, st):
-        await apply_compression(j, st)
-
-    await execute_step(msg, executor)
-
-
-@broker.subscriber("step_extract")
-async def handle_extract(msg: dict):
-    await execute_step(msg, apply_extraction)
-
-
-@broker.subscriber("step_notify")
-async def handle_notify(msg: dict):
-    async def executor(j, s, st):
-        await broker.publish({"job_id": str(j.id), "params": json.loads(st.params)}, queue="webhooks")
-
-    await execute_step(msg, executor)
+if ACTIVE_STEP in ("all", "notify"):
+    @broker.subscriber("step_notify")
+    async def handle_notify(msg: dict):
+        async def executor(j, s, st):
+            await broker.publish({"job_id": str(j.id), "params": json.loads(st.params)}, queue="webhooks")
+        await execute_step(msg, executor)

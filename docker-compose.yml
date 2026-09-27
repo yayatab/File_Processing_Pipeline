@@ -35,7 +35,7 @@ services:
       - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
 
-  worker:
+  worker-validate:
     build: .
     command: faststream run src.worker.main:app
     volumes:
@@ -47,6 +47,77 @@ services:
     environment:
       - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ACTIVE_WORKER_STEP=validate
+
+  worker-transform:
+    build: .
+    command: faststream run src.worker.main:app
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ACTIVE_WORKER_STEP=transform
+
+  worker-convert:
+    build: .
+    command: faststream run src.worker.main:app
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ACTIVE_WORKER_STEP=convert
+
+  worker-compress:
+    build: .
+    command: faststream run src.worker.main:app
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ACTIVE_WORKER_STEP=compress
+
+  worker-extract:
+    build: .
+    command: faststream run src.worker.main:app
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ACTIVE_WORKER_STEP=extract
+
+  worker-notify:
+    build: .
+    command: faststream run src.worker.main:app
+    volumes:
+      - .:/app
+      - shared_storage:/app/storage
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      - DATABASE_URL=mysql+pymysql://root:root@mysql:3306/pipeline
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - ACTIVE_WORKER_STEP=notify
 
   notifier:
     build: .
