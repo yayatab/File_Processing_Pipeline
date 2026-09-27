@@ -6,8 +6,6 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: pipeline
-    ports:
-      - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./sql_init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -24,7 +22,7 @@ services:
     build: .
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - .:/app
       - shared_storage:/app/storage
